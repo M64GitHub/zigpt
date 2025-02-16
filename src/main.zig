@@ -1,29 +1,27 @@
 const std = @import("std");
-const http = std.http; // ✅ Import HTTP module
+const http = std.http;
 
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
 
-    // ✅ Get the API key from an environment variable
+    // Get the API key from an environment variable
     const env_api_key = std.process.getEnvVarOwned(gpa.allocator(), "OPENAI_API_KEY") catch |err| {
         std.debug.print("Error: Could not retrieve API key from environment: {}\n", .{err});
         return;
     };
     defer gpa.allocator().free(env_api_key);
 
-    // ✅ Create an HTTP client
     var client = http.Client{ .allocator = gpa.allocator() };
     defer client.deinit();
 
-    // ✅ Allocate a buffer for server headers
+    // Allocate a buffer for server headers
     var buf: [4096]u8 = undefined;
 
-    // ✅ Allocate a response buffer
-    var response_buffer = std.ArrayList(u8).init(gpa.allocator()); // ✅ Create response storage
+    var response_buffer = std.ArrayList(u8).init(gpa.allocator()); //  Create response storage
     defer response_buffer.deinit();
 
-    // ✅ Get user input
+    // Get user input
     var stdout = std.io.getStdOut().writer();
     var stdin = std.io.getStdIn().reader();
 
@@ -37,7 +35,7 @@ pub fn main() !void {
     else
         "";
 
-    // ✅ Construct JSON payload for AI query
+    // Construct JSON payload for AI query
     const request_body = std.fmt.allocPrint(gpa.allocator(),
         \\{{
         \\  "model": "gpt-4o",
@@ -54,13 +52,13 @@ pub fn main() !void {
     const auth_header = std.fmt.allocPrint(gpa.allocator(), "Bearer {s}", .{env_api_key}) catch unreachable;
     defer gpa.allocator().free(auth_header);
 
-    // ✅ Send the request to OpenAI's API
+    // Send the request to OpenAI's API
     const res = try client.fetch(.{
         .method = .POST,
         .payload = request_body,
         .location = .{ .url = "https://api.openai.com/v1/chat/completions" },
         .server_header_buffer = &buf,
-        .response_storage = .{ .dynamic = &response_buffer }, // ✅ Store the response body here!
+        .response_storage = .{ .dynamic = &response_buffer }, // Store the response body here!
         .headers = http.Client.Request.Headers{
             .content_type = .{ .override = "application/json" },
             .authorization = .{ .override = auth_header },
@@ -70,13 +68,10 @@ pub fn main() !void {
 
     std.debug.print("HTTP Status: {s}\n", .{@tagName(res.status)});
 
-    // ✅ Extract the response body
-    const response_body = response_buffer.items; // ✅ Now we can read the body!
+    const response_body = response_buffer.items;
 
-    // ✅ Print the full raw response for debugging
     std.debug.print("Raw API Response:\n{s}\n", .{response_body});
 
-    // ✅ Extract the AI-generated response manually
     const start_index = std.mem.indexOf(u8, response_body, "\"content\": \"") orelse {
         std.debug.print("Error: No content field found in response.\n", .{});
         return;
@@ -88,6 +83,5 @@ pub fn main() !void {
 
     const poem: []const u8 = response_body[start_index + 11 .. end_index];
 
-    // ✅ Print AI-generated poem
     std.debug.print("\nAI-Generated Poem:\n{s}\n", .{poem});
 }
