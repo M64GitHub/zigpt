@@ -16,6 +16,10 @@ pub fn main() !void {
     // Allocate a buffer for server headers
     var buf: [1024]u8 = undefined;
 
+    // Allocate a response buffer
+    var response_buffer = std.ArrayList(u8).init(gpa.allocator()); // ✅ Create response storage
+    defer response_buffer.deinit();
+
     // Get user input
     var stdout = std.io.getStdOut().writer();
     var stdin = std.io.getStdIn().reader();
@@ -33,14 +37,14 @@ pub fn main() !void {
 
     // ✅ Construct JSON payload for AI query
     const request_body = std.fmt.allocPrint(gpa.allocator(),
-        \\{
+        \\{{
         \\  "model": "gpt-4o",
         \\  "messages": [
-        \\    {"role": "system", "content": "You are a poetic assistant."},
-        \\    {"role": "user", "content": "Write a beautiful poem about {s}."}
+        \\    {{"role": "system", "content": "You are a poetic assistant."}},
+        \\    {{"role": "user", "content": "Write a beautiful poem about {s}."}}
         \\  ],
         \\  "max_tokens": 100
-        \\}
+        \\}}
     , .{theme_str}) catch unreachable;
 
     defer gpa.allocator().free(request_body);
@@ -51,30 +55,32 @@ pub fn main() !void {
         .payload = request_body,
         .location = .{ .url = "https://api.openai.com/v1/chat/completions" },
         .server_header_buffer = &buf,
+        .response_storage = .{ .dynamic = &response_buffer }, // ✅ Store the response body here!
         .headers = http.Client.Request.Headers{
-            .content_type = .{ .override = header_content_type }, // ✅ Use `.override`
-            .authorization = .{ .override = header_authorization }, // ✅ Use `.override`
+            .content_type = .{ .override = header_content_type },
+            .authorization = .{ .override = header_authorization },
         },
     });
 
-    // ✅ Read the response body
-    var response_buf: [4096]u8 = undefined;
-    const response_size = try res.reader.readAll(&response_buf); // ✅ Use `.reader` instead of `.body`
+    std.debug.print("Status: {s}\n", .{@tagName(res.status)});
+
+    // ✅ Extract the response body
+    const response_body = response_buffer.items; // ✅ Now we can read the body!
 
     // ✅ Print the full raw response for debugging
-    std.debug.print("Raw API Response:\n{s}\n", .{response_buf[0..response_size]});
+    std.debug.print("Raw API Response:\n{s}\n", .{response_body});
 
-    // ✅ Extract the AI-generated poem manually
-    const start_index = std.mem.indexOf(u8, response_buf[0..response_size], "\"content\": \"") orelse {
+    // ✅ Extract the AI-generated response manually
+    const start_index = std.mem.indexOf(u8, response_body, "\"content\": \"") orelse {
         std.debug.print("Error: No content field found in response.\n", .{});
         return;
     };
-    const end_index = std.mem.indexOfPos(u8, response_buf[0..response_size], start_index + 11, "\"") orelse {
+    const end_index = std.mem.indexOfPos(u8, response_body, start_index + 11, "\"") orelse {
         std.debug.print("Error: Could not find end of AI response.\n", .{});
         return;
     };
 
-    const poem: []const u8 = response_buf[start_index + 11 .. end_index];
+    const poem: []const u8 = response_body[start_index + 11 .. end_index];
 
     // ✅ Print AI-generated poem
     std.debug.print("\nAI-Generated Poem:\n{s}\n", .{poem});
